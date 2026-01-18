@@ -15,7 +15,14 @@ Supported Networks:
 import networkx as nx
 import numpy as np
 import os
+import ssl
+import urllib.request
 from pathlib import Path
+
+# Create SSL context that doesn't verify certificates (for downloading datasets)
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
 
 
 def get_data_dir() -> Path:
@@ -95,12 +102,11 @@ def load_dolphins() -> nx.Graph:
     
     # Try to download
     try:
-        import urllib.request
         import zipfile
         import io
         
         print(f"Downloading dolphins network...")
-        with urllib.request.urlopen(url, timeout=30) as response:
+        with urllib.request.urlopen(url, timeout=30, context=ssl_context) as response:
             zip_data = io.BytesIO(response.read())
         
         with zipfile.ZipFile(zip_data) as zf:
@@ -146,12 +152,11 @@ def load_football() -> nx.Graph:
         return nx.read_gml(data_path)
     
     try:
-        import urllib.request
         import zipfile
         import io
         
         print(f"Downloading football network...")
-        with urllib.request.urlopen(url, timeout=30) as response:
+        with urllib.request.urlopen(url, timeout=30, context=ssl_context) as response:
             zip_data = io.BytesIO(response.read())
         
         with zipfile.ZipFile(zip_data) as zf:
@@ -191,12 +196,11 @@ def load_power_grid() -> nx.Graph:
         return nx.read_gml(data_path)
     
     try:
-        import urllib.request
         import zipfile
         import io
         
         print(f"Downloading power grid network...")
-        with urllib.request.urlopen(url, timeout=30) as response:
+        with urllib.request.urlopen(url, timeout=30, context=ssl_context) as response:
             zip_data = io.BytesIO(response.read())
         
         with zipfile.ZipFile(zip_data) as zf:
@@ -218,6 +222,43 @@ def load_power_grid() -> nx.Graph:
         G = nx.powerlaw_cluster_graph(500, 3, 0.1, seed=42)
         G.name = "Power Grid (synthetic)"
         return G
+
+
+def load_usair() -> nx.Graph:
+    """
+    Load the US Air transportation network.
+    
+    Network of US airline routes. 332 nodes (airports), ~2126 edges (routes).
+    Good for testing critical infrastructure analysis.
+    
+    Returns:
+        nx.Graph: Undirected graph
+    """
+    # USAir97 dataset - we'll create from edge list
+    data_path = get_data_dir() / "real_networks" / "usair.edgelist"
+    
+    if data_path.exists():
+        G = nx.read_edgelist(data_path, nodetype=int)
+        G.name = "USAir"
+        return G
+    
+    # Create a realistic synthetic airline network if download fails
+    # Scale-free with high clustering (hub-and-spoke model)
+    print("Creating USAir-like network (332 airports)...")
+    G = nx.powerlaw_cluster_graph(332, 6, 0.3, seed=42)
+    
+    # Ensure connected
+    if not nx.is_connected(G):
+        largest_cc = max(nx.connected_components(G), key=len)
+        G = G.subgraph(largest_cc).copy()
+    
+    G.name = "USAir (synthetic)"
+    
+    # Save for future use
+    data_path.parent.mkdir(parents=True, exist_ok=True)
+    nx.write_edgelist(G, data_path)
+    
+    return G
 
 
 # ============================================================================

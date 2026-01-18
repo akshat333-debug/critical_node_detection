@@ -25,6 +25,7 @@ from datetime import datetime
 
 from data_loading import (load_karate_club, load_les_miserables, 
                           load_florentine_families, load_dolphins,
+                          load_usair, load_power_grid, load_football,
                           create_barabasi_albert, get_network_info)
 from centralities import compute_all_centralities
 from critic import compute_critic_weights, explain_weights
@@ -65,7 +66,7 @@ def run_experiment(G: nx.Graph,
     if results_dir:
         results_path = Path(results_dir)
         results_path.mkdir(parents=True, exist_ok=True)
-        network_dir = results_path / network_name.lower().replace(' ', '_')
+        network_dir = results_path / network_name.lower().replace(' ', '_').replace('(', '').replace(')', '')
         network_dir.mkdir(exist_ok=True)
     else:
         network_dir = None
@@ -168,21 +169,35 @@ def run_experiment(G: nx.Graph,
     return results
 
 
-def run_all_experiments(results_dir: str = None) -> dict:
-    """Run experiments on all benchmark networks."""
+def run_all_experiments(results_dir: str = None, include_large: bool = False) -> dict:
+    """Run experiments on all benchmark networks.
+    
+    Args:
+        results_dir: Directory to save results
+        include_large: If True, include larger networks (USAir, Power Grid)
+    """
     
     if results_dir is None:
         results_dir = Path(__file__).parent.parent / 'results'
     
     all_results = {}
     
-    # Networks to test
+    # Core networks to test
     networks = [
         ('Karate Club', load_karate_club()),
         ('Les Miserables', load_les_miserables()),
         ('Florentine Families', load_florentine_families()),
+        ('Dolphins', load_dolphins()),
+        ('Football', load_football()),
         ('Barabasi-Albert (100)', create_barabasi_albert(100, 3)),
     ]
+    
+    # Add larger networks if requested
+    if include_large:
+        networks.extend([
+            ('USAir', load_usair()),
+            ('Power Grid', load_power_grid()),
+        ])
     
     for name, G in networks:
         try:
