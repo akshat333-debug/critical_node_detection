@@ -32,6 +32,11 @@ from data_loading import (load_karate_club, load_les_miserables,
 from cascading_failure import simulate_cascading_failure, compare_cascade_methods, cascade_over_fractions
 from sensitivity_analysis import sensitivity_to_normalization, sensitivity_to_centrality_removal, sensitivity_to_top_k
 from real_world_datasets import generate_social_network, generate_infrastructure_network, generate_biological_network, get_network_characteristics
+from temporal_analysis import temporal_prediction_summary, generate_temporal_snapshots, analyze_temporal_rankings
+from explainable_ai import explain_node, explain_top_k, generate_summary_report
+from uncertainty import full_uncertainty_analysis, bootstrap_rankings
+from domain_weights import domain_aware_analysis, get_available_domains, detect_network_domain
+from adversarial import full_adversarial_analysis, test_robustness
 
 # Page config
 st.set_page_config(
@@ -264,10 +269,11 @@ if excluded_metrics:
 # MAIN TABS
 # ============================================================================
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
-    "📈 Overview", "📊 Centralities", "⚖️ CRITIC Weights", 
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14, tab15 = st.tabs([
+    "📈 Overview", "📊 Centralities", "⚖️ CRITIC", 
     "🏆 Rankings", "💥 Attack", "🌊 Cascade", 
-    "🔬 Sensitivity", "📊 Compare", "🌐 Real-World", "📥 Export"
+    "📥 Export", "🔬 Sensitivity", "📊 Compare", "🌐 Real-World",
+    "⏰ Temporal", "💡 Explain", "📊 Uncertainty", "🎯 Domain", "🛡️ Adversarial"
 ])
 
 # TAB 1: Overview
@@ -724,11 +730,147 @@ with tab10:
         fig = px.bar(x=weights_rw.values, y=weights_rw.index, orientation='h', color=weights_rw.values)
         st.plotly_chart(fig, use_container_width=True)
 
+# TAB 11: Temporal Analysis (NEW)
+with tab11:
+    st.subheader("⏰ Temporal Critical Node Prediction")
+    st.markdown("Predict which nodes will become critical in the FUTURE.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        n_snapshots = st.slider("Number of time snapshots", 3, 10, 5)
+    with col2:
+        volatility = st.slider("Network volatility", 0.05, 0.30, 0.10)
+    
+    if st.button("⏰ Run Temporal Analysis", type="primary"):
+        with st.spinner("Generating temporal snapshots..."):
+            result = temporal_prediction_summary(G, n_snapshots, volatility)
+        
+        st.success(f"Analyzed {n_snapshots} snapshots!")
+        
+        st.markdown("### 🌟 Rising Stars (Becoming More Critical)")
+        if result['rising_stars']:
+            for rs in result['rising_stars'][:5]:
+                st.write(f"**Node {rs['node']}**: Trend {rs['trend']:.1f} (improving)")
+        else:
+            st.info("No rising stars detected")
+        
+        st.markdown("### 🏆 Stable Critical Nodes")
+        if result['stable_critical']:
+            for sc in result['stable_critical'][:5]:
+                st.write(f"**Node {sc['node']}**: Stability σ={sc['stability']:.2f}")
+
+# TAB 12: Explainable AI (NEW)
+with tab12:
+    st.subheader("💡 Explainable AI: Why is this node critical?")
+    st.markdown("Natural language explanations for node importance.")
+    
+    node_to_explain = st.selectbox(
+        "Select node to explain:", 
+        critical_nodes[:min(10, len(critical_nodes))],
+        format_func=lambda x: f"Node {x} (Rank #{int(topsis_results.loc[x, 'rank'])})"
+    )
+    
+    if st.button("💡 Explain", type="primary"):
+        exp = explain_node(node_to_explain, df_centrality, weights, topsis_results)
+        st.markdown(exp['main_explanation'])
+        
+        st.markdown("### Contributing Factors")
+        for factor in exp['top_factors']:
+            pct = factor['percentile']
+            st.progress(pct/100, text=f"**{factor['metric']}**: Top {100-pct:.0f}% (weight: {factor['weight']:.2f})")
+
+# TAB 13: Uncertainty Quantification (NEW)
+with tab13:
+    st.subheader("📊 Uncertainty Quantification")
+    st.markdown("How confident are we in the rankings? Bootstrap-based confidence intervals.")
+    
+    n_bootstrap = st.slider("Bootstrap iterations", 20, 100, 50)
+    
+    if st.button("📊 Run Uncertainty Analysis", type="primary"):
+        with st.spinner(f"Running {n_bootstrap} bootstrap iterations..."):
+            result = full_uncertainty_analysis(G, n_bootstrap=n_bootstrap, top_k=10)
+        
+        st.success("Uncertainty analysis complete!")
+        
+        st.markdown("### 🎯 High-Confidence Critical Nodes (>90% in top-10)")
+        hc = result['high_confidence_critical']
+        if hc:
+            st.success(f"Nodes: {hc}")
+        else:
+            st.warning("No nodes are >90% confident in top-10")
+        
+        st.markdown("### 📊 Top-10 Probabilities")
+        prob_df = result['top_k_probabilities'].head(10)
+        fig = px.bar(prob_df, x='node', y='prob_top_k', 
+                    title='Probability of Being in Top-10',
+                    color='prob_top_k', color_continuous_scale='RdYlGn')
+        st.plotly_chart(fig, use_container_width=True)
+
+# TAB 14: Domain-Specific (NEW)
+with tab14:
+    st.subheader("🎯 Domain-Specific Weighting")
+    st.markdown("Use pre-trained weights optimized for your network type.")
+    
+    domains = get_available_domains()
+    domain_choice = st.selectbox(
+        "Select domain profile:",
+        list(domains.keys()),
+        format_func=lambda x: f"{domains[x]['name']}"
+    )
+    
+    st.info(f"**{domains[domain_choice]['name']}**: {domains[domain_choice]['description']}")
+    
+    if st.button("🎯 Apply Domain Weights", type="primary"):
+        with st.spinner("Analyzing with domain weights..."):
+            result = domain_aware_analysis(G, domain=domain_choice)
+        
+        st.success(f"Applied {domain_choice} weights!")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("### Domain Weights")
+            for m, w in result['domain_weights'].items():
+                st.write(f"**{m}**: {w:.2f}")
+        with col2:
+            st.markdown("### Comparison with CRITIC")
+            overlap = result['comparison_with_critic']['overlap']
+            st.metric("Top-10 Overlap", f"{overlap:.0%}")
+
+# TAB 15: Adversarial Robustness (NEW)
+with tab15:
+    st.subheader("🛡️ Adversarial Robustness Testing")
+    st.markdown("Test if an attacker can manipulate node rankings.")
+    
+    if st.button("🛡️ Run Adversarial Analysis", type="primary"):
+        with st.spinner("Testing attack vectors..."):
+            result = full_adversarial_analysis(G)
+        
+        st.success("Adversarial analysis complete!")
+        
+        grade = result['overall_grade']
+        vuln = result['overall_vulnerability']
+        
+        if grade == 'A':
+            st.success(f"**Overall Grade: {grade}** - Highly Robust! ({vuln:.0f}% vulnerable)")
+        elif grade == 'B':
+            st.warning(f"**Overall Grade: {grade}** - Moderately Robust ({vuln:.0f}% vulnerable)")
+        else:
+            st.error(f"**Overall Grade: {grade}** - Vulnerable to attacks ({vuln:.0f}% vulnerable)")
+        
+        st.markdown("### Node Robustness")
+        for nr in result['node_robustness']:
+            st.write(f"Node {nr['node']}: **Grade {nr['robustness_grade']}** ({nr['vulnerability_score']:.0f}% vulnerable)")
+        
+        st.markdown("### Recommendations")
+        for rec in result['recommendations']:
+            st.write(f"• {rec}")
+
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #888; font-size: 0.9rem;'>
     <p>Critical Node Detection using CRITIC-TOPSIS Framework</p>
-    <p><em>Advanced Features: Cascading Failure | Sensitivity Analysis | Network Comparison | Real-World Datasets</em></p>
+    <p><em>Advanced: Temporal Prediction | Explainable AI | Uncertainty | Domain Weights | Adversarial Robustness</em></p>
 </div>
 """, unsafe_allow_html=True)
+
