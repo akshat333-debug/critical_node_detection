@@ -29,6 +29,9 @@ from data_loading import (load_karate_club, load_les_miserables,
                           load_florentine_families, load_dolphins,
                           create_barabasi_albert, create_erdos_renyi,
                           get_network_info)
+from cascading_failure import simulate_cascading_failure, compare_cascade_methods, cascade_over_fractions
+from sensitivity_analysis import sensitivity_to_normalization, sensitivity_to_centrality_removal, sensitivity_to_top_k
+from real_world_datasets import generate_social_network, generate_infrastructure_network, generate_biological_network, get_network_characteristics
 
 # Page config
 st.set_page_config(
@@ -261,9 +264,10 @@ if excluded_metrics:
 # MAIN TABS
 # ============================================================================
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "📈 Overview", "📊 Centralities", "⚖️ CRITIC Weights", 
-    "🏆 Rankings", "💥 Attack Simulation", "📥 Export"
+    "🏆 Rankings", "💥 Attack", "🌊 Cascade", 
+    "🔬 Sensitivity", "📊 Compare", "🌐 Real-World", "📥 Export"
 ])
 
 # TAB 1: Overview
@@ -541,8 +545,52 @@ with tab5:
             topsis_score = effectiveness[effectiveness['method'] == 'CRITIC-TOPSIS']['effectiveness'].values[0]
             st.info(f"**Winner: {winner}** ({winner_score:.4f}) | CRITIC-TOPSIS: {topsis_score:.4f}")
 
-# TAB 6: Export (NEW)
+# TAB 6: Cascading Failure Simulation
 with tab6:
+    st.subheader("🌊 Cascading Failure Simulation")
+    st.markdown("""
+    Simulate how failures **spread** through the network, not just immediate removal.
+    
+    **Model**: Each node has capacity = initial_load × capacity_factor. When overloaded, it fails.
+    """)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        capacity_factor = st.slider("Capacity factor", 1.0, 2.0, 1.2, 0.1,
+                                   help="How much extra load each node can handle (1.0 = no tolerance)")
+    with col2:
+        initial_fraction = st.slider("Initial failure fraction", 0.02, 0.20, 0.05, 0.01,
+                                    help="Fraction of top critical nodes to remove initially")
+    
+    if st.button("🌊 Run Cascade Simulation", type="primary"):
+        with st.spinner("Simulating cascading failures..."):
+            ranking = get_ranking_from_topsis(topsis_results)
+            n_initial = max(1, int(G.number_of_nodes() * initial_fraction))
+            cascade_result = simulate_cascading_failure(
+                G, ranking[:n_initial],
+                capacity_factor=capacity_factor, verbose=False
+            )
+        
+        st.success("Cascade simulation complete!")
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Initial Failures", cascade_result['initial_failures'])
+        c2.metric("Cascade Iterations", cascade_result['cascade_iterations'])
+        c3.metric("Total Failures", cascade_result['total_failures'])
+        c4.metric("Survival Rate", f"{cascade_result['survival_rate']:.1%}")
+        
+        multiplier = cascade_result['total_failures'] / max(1, cascade_result['initial_failures'])
+        cascade_extra = cascade_result['total_failures'] - cascade_result['initial_failures']
+        
+        if multiplier > 1.5:
+            st.error(f"⚠️ **Cascade multiplier: {multiplier:.1f}x** - Initial failures caused {cascade_extra} additional failures!")
+        else:
+            st.info(f"ℹ️ Cascade multiplier: {multiplier:.1f}x (relatively contained)")
+        
+        st.metric("Final LCC Fraction", f"{cascade_result['lcc_fraction']:.1%}")
+
+# TAB 7: Export Results
+with tab7:
     st.subheader("📥 Export Results")
     st.markdown("Download your analysis results in various formats.")
     
@@ -550,99 +598,137 @@ with tab6:
     
     with col1:
         st.markdown("### Critical Nodes")
-        
-        # Prepare export data
         export_df = topsis_results.reset_index()
         export_df.columns = ['node', 'topsis_score', 'dist_to_best', 'dist_to_worst', 'rank']
         
-        # CSV download
         csv_data = export_df.to_csv(index=False)
-        st.download_button(
-            label="📄 Download CSV",
-            data=csv_data,
-            file_name="critical_nodes.csv",
-            mime="text/csv"
-        )
+        st.download_button("📄 Download CSV", csv_data, "critical_nodes.csv", "text/csv")
         
-        # JSON download
         json_data = export_df.to_json(orient='records', indent=2)
-        st.download_button(
-            label="📋 Download JSON",
-            data=json_data,
-            file_name="critical_nodes.json",
-            mime="application/json"
-        )
+        st.download_button("📋 Download JSON", json_data, "critical_nodes.json", "application/json")
         
         st.markdown("---")
-        st.markdown("### Top Critical Nodes (Quick)")
-        top_nodes_list = critical_nodes[:top_k]
-        st.code(f"Top {top_k} nodes: {top_nodes_list}")
+        st.markdown("### Top Critical Nodes")
+        st.code(f"Top {top_k} nodes: {critical_nodes[:top_k]}")
     
     with col2:
         st.markdown("### CRITIC Weights")
-        
-        # Weights CSV
-        weights_df = pd.DataFrame({
-            'centrality': weights.index,
-            'weight': weights.values
-        })
-        weights_csv = weights_df.to_csv(index=False)
-        st.download_button(
-            label="📄 Download Weights CSV",
-            data=weights_csv,
-            file_name="critic_weights.csv",
-            mime="text/csv"
-        )
+        weights_df = pd.DataFrame({'centrality': weights.index, 'weight': weights.values})
+        st.download_button("📄 Download Weights CSV", weights_df.to_csv(index=False), "critic_weights.csv", "text/csv")
         
         st.markdown("---")
-        st.markdown("### Centrality Values")
+        st.markdown("### All Centralities")
+        st.download_button("📊 Download All Centralities", df_centrality.to_csv(), "centralities.csv", "text/csv")
+
+# TAB 8: Sensitivity Analysis (NEW)
+with tab8:
+    st.subheader("🔬 Sensitivity Analysis")
+    st.markdown("Test how robust the rankings are to parameter changes.")
+    
+    if st.button("🔬 Run Sensitivity Analysis", type="primary"):
+        with st.spinner("Analyzing sensitivity..."):
+            norm_sens = sensitivity_to_normalization(G)
+            cent_impact = sensitivity_to_centrality_removal(G)
+            topk_stab = sensitivity_to_top_k(G)
         
-        # Full centralities CSV
-        centralities_csv = df_centrality.to_csv()
-        st.download_button(
-            label="📊 Download All Centralities",
-            data=centralities_csv,
-            file_name="centralities.csv",
-            mime="text/csv"
-        )
+        st.success("Analysis complete!")
+        
+        st.markdown("### 1. Normalization Method Impact")
+        st.dataframe(norm_sens, hide_index=True)
+        
+        st.markdown("### 2. Centrality Impact (if removed)")
+        st.markdown("*Higher impact means this metric significantly affects rankings*")
+        fig = px.bar(cent_impact, x='removed_centrality', y='impact',
+                    title='Impact of Removing Each Centrality', color='impact', color_continuous_scale='Reds')
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.markdown("### 3. Top-k Stability")
+        pivot = topk_stab.pivot(index='metric', columns='k', values='overlap')
+        fig = px.imshow(pivot, text_auto='.0f', color_continuous_scale='Blues',
+                       title='TOPSIS Overlap (%) with Single Metrics at Different k')
+        st.plotly_chart(fig, use_container_width=True)
+
+# TAB 9: Network Comparison (NEW)
+with tab9:
+    st.subheader("📊 Network Comparison Mode")
+    st.markdown("Compare same analysis across multiple network types.")
     
-    st.markdown("---")
-    st.markdown("### 📝 Analysis Summary")
-    
-    summary = f"""
-    Network Analysis Summary
-    ========================
-    
-    Network: {info.get('name', 'Custom')}
-    Nodes: {info['nodes']}
-    Edges: {info['edges']}
-    Density: {info['density']:.4f}
-    
-    Settings:
-    - Normalization: {normalization_method}
-    - Adaptive selection: {'Yes' if use_adaptive else 'No'}
-    - Excluded metrics: {', '.join(excluded_metrics) if excluded_metrics else 'None'}
-    
-    Top {top_k} Critical Nodes:
-    {', '.join(str(n) for n in critical_nodes[:top_k])}
-    
-    CRITIC Weights:
-    {chr(10).join(f'  {k}: {v:.4f}' for k, v in weights.items())}
-    """
-    
-    st.download_button(
-        label="📝 Download Summary Report",
-        data=summary,
-        file_name="analysis_summary.txt",
-        mime="text/plain"
+    selected_networks = st.multiselect(
+        "Select networks to compare:",
+        ["Karate Club", "Social (synthetic)", "Infrastructure (synthetic)", "Biological (synthetic)"],
+        default=["Karate Club", "Social (synthetic)"]
     )
+    
+    if st.button("📊 Run Comparison", type="primary") and selected_networks:
+        comparison_results = []
+        
+        for net_name in selected_networks:
+            with st.spinner(f"Analyzing {net_name}..."):
+                if net_name == "Karate Club":
+                    G_temp = load_karate_club()
+                elif "Social" in net_name:
+                    G_temp = generate_social_network(100)
+                elif "Infrastructure" in net_name:
+                    G_temp = generate_infrastructure_network(100)
+                else:
+                    G_temp = generate_biological_network(100)
+                
+                chars = get_network_characteristics(G_temp)
+                df_temp = compute_all_centralities(G_temp, verbose=False)
+                weights_temp, _ = compute_critic_weights(df_temp, verbose=False)
+                
+                comparison_results.append({
+                    'Network': net_name,
+                    'Nodes': chars['nodes'],
+                    'Edges': chars['edges'],
+                    'Density': f"{chars['density']:.3f}",
+                    'Clustering': f"{chars['clustering']:.3f}",
+                    'Top Weight': f"{weights_temp.idxmax()} ({weights_temp.max():.2f})"
+                })
+        
+        st.success("Comparison complete!")
+        st.dataframe(pd.DataFrame(comparison_results), hide_index=True)
+
+# TAB 10: Real-World Datasets (NEW)
+with tab10:
+    st.subheader("🌐 Real-World Network Types")
+    st.markdown("Generate realistic networks based on different domains.")
+    
+    domain = st.selectbox("Select network domain:", ["Social", "Infrastructure", "Biological"])
+    rw_nodes = st.slider("Network size", 50, 500, 200)
+    
+    if st.button("🌐 Generate & Analyze", type="primary"):
+        with st.spinner(f"Generating {domain} network..."):
+            if domain == "Social":
+                G_rw = generate_social_network(rw_nodes)
+            elif domain == "Infrastructure":
+                G_rw = generate_infrastructure_network(rw_nodes)
+            else:
+                G_rw = generate_biological_network(rw_nodes)
+            
+            chars = get_network_characteristics(G_rw)
+            df_rw = compute_all_centralities(G_rw, verbose=False)
+            weights_rw, _ = compute_critic_weights(df_rw, verbose=False)
+            results_rw, _ = topsis_rank(df_rw, weights_rw, verbose=False)
+        
+        st.success(f"{domain} network generated!")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Nodes", chars['nodes'])
+        col2.metric("Edges", chars['edges'])
+        col3.metric("Clustering", f"{chars['clustering']:.3f}")
+        
+        st.markdown("**Top 10 Critical Nodes:**")
+        st.write(results_rw.head(10))
+        
+        st.markdown("**CRITIC Weights:**")
+        fig = px.bar(x=weights_rw.values, y=weights_rw.index, orientation='h', color=weights_rw.values)
+        st.plotly_chart(fig, use_container_width=True)
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #888; font-size: 0.9rem;'>
     <p>Critical Node Detection using CRITIC-TOPSIS Framework</p>
-    <p>Built with NetworkX, Streamlit, and Plotly</p>
-    <p><em>Features: Adaptive centrality selection | Multiple normalizations | Custom network upload | Export results</em></p>
+    <p><em>Advanced Features: Cascading Failure | Sensitivity Analysis | Network Comparison | Real-World Datasets</em></p>
 </div>
 """, unsafe_allow_html=True)
