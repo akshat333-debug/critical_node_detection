@@ -336,7 +336,7 @@ with tab1:
             text=[str(n) if n in critical_nodes else '' for n in G.nodes()],
             textposition='top center',
             hoverinfo='text',
-            hovertext=[f"Node: {n}<br>Rank: {int(topsis_results.loc[n, 'rank'])}" for n in G.nodes()]
+            hovertext=[f"Node: {n}<br>Rank: {int(topsis_results.loc[n, 'rank'])}" if n in topsis_results.index else f"Node: {n}<br>Rank: N/A" for n in G.nodes()]
         )
         
         fig = go.Figure(data=[edge_trace, node_trace])
