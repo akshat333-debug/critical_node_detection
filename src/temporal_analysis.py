@@ -158,11 +158,129 @@ def predict_future_critical(snapshots: List[nx.Graph],
     }
 
 
+def analyze_weight_evolution(snapshots: List[nx.Graph]) -> Dict:
+    """
+    Track how CRITIC weights evolve across temporal snapshots.
+    
+    Returns:
+        Dictionary with weight timeseries and drift analysis
+    """
+    weight_history = []  # List of {metric: weight} per snapshot
+    
+    for t, G in enumerate(snapshots):
+        df = compute_all_centralities(G, verbose=False)
+        weights, _ = compute_critic_weights(df, verbose=False)
+        weight_dict = {'t': t}
+        for metric, w in weights.items():
+            weight_dict[metric] = w
+        weight_history.append(weight_dict)
+    
+    weight_df = pd.DataFrame(weight_history).set_index('t')
+    
+    # Compute drift: absolute change from first to last snapshot
+    metrics = [c for c in weight_df.columns]
+    drift = {}
+    for m in metrics:
+        first_val = weight_df[m].iloc[0]
+        last_val = weight_df[m].iloc[-1]
+        drift[m] = {
+            'initial': first_val,
+            'final': last_val,
+            'absolute_change': abs(last_val - first_val),
+            'direction': 'increased' if last_val > first_val else 'decreased',
+            'significant': abs(last_val - first_val) > 0.03  # >3% change
+        }
+    
+    return {
+        'weight_timeseries': weight_df,
+        'drift': drift,
+        'metrics': metrics
+    }
+
+
+def compute_adaptive_weights(snapshots: List[nx.Graph],
+                             decay: float = 0.3) -> pd.Series:
+    """
+    Compute exponentially-weighted adaptive CRITIC weights.
+    
+    Recent snapshots are weighted more heavily using exponential decay.
+    
+    Args:
+        snapshots: List of network snapshots (time-ordered)
+        decay: Decay factor (0 = equal weight, 1 = only latest matters)
+    
+    Returns:
+        pd.Series of adaptive weights (summing to 1.0)
+    """
+    n = len(snapshots)
+    all_weights = []
+    
+    for G in snapshots:
+        df = compute_all_centralities(G, verbose=False)
+        weights, _ = compute_critic_weights(df, verbose=False)
+        all_weights.append(weights)
+    
+    # Exponential time weights: more recent = higher weight
+    time_weights = np.array([np.exp(-decay * (n - 1 - t)) for t in range(n)])
+    time_weights = time_weights / time_weights.sum()
+    
+    # Weighted average of CRITIC weights
+    metrics = all_weights[0].index
+    adaptive = {}
+    for m in metrics:
+        vals = np.array([w[m] for w in all_weights])
+        adaptive[m] = np.dot(vals, time_weights)
+    
+    result = pd.Series(adaptive)
+    result = result / result.sum()  # Normalize to sum to 1
+    return result
+
+
+def temporal_adaptive_summary(G: nx.Graph,
+                              n_snapshots: int = 5,
+                              volatility: float = 0.1,
+                              decay: float = 0.3) -> Dict:
+    """
+    Full temporal analysis with adaptive weight recalculation.
+    
+    Combines rank prediction with weight evolution tracking.
+    """
+    snapshots = generate_temporal_snapshots(G, n_snapshots, volatility)
+    predictions = predict_future_critical(snapshots)
+    weight_evolution = analyze_weight_evolution(snapshots)
+    adaptive_weights = compute_adaptive_weights(snapshots, decay=decay)
+    
+    # Also compute static weights for comparison
+    df_static = compute_all_centralities(G, verbose=False)
+    static_weights, _ = compute_critic_weights(df_static, verbose=False)
+    
+    # Weight comparison
+    comparison = {}
+    for m in adaptive_weights.index:
+        if m in static_weights.index:
+            comparison[m] = {
+                'static': static_weights[m],
+                'adaptive': adaptive_weights[m],
+                'diff': adaptive_weights[m] - static_weights[m]
+            }
+    
+    return {
+        'n_snapshots': n_snapshots,
+        'volatility': volatility,
+        'decay': decay,
+        **predictions,
+        'weight_evolution': weight_evolution,
+        'adaptive_weights': adaptive_weights,
+        'static_weights': static_weights,
+        'weight_comparison': comparison
+    }
+
+
 def temporal_prediction_summary(G: nx.Graph, 
                                 n_snapshots: int = 5,
                                 volatility: float = 0.1) -> Dict:
     """
-    Main entry point for temporal analysis.
+    Main entry point for temporal analysis (backward compatible).
     """
     snapshots = generate_temporal_snapshots(G, n_snapshots, volatility)
     predictions = predict_future_critical(snapshots)
@@ -179,8 +297,14 @@ if __name__ == "__main__":
     print("=" * 50)
     
     G = nx.karate_club_graph()
-    result = temporal_prediction_summary(G, n_snapshots=5, volatility=0.15)
+    
+    # Test adaptive weights
+    result = temporal_adaptive_summary(G, n_snapshots=5, volatility=0.15, decay=0.3)
     
     print(f"\nCurrent critical: {result['current_critical'][:5]}")
     print(f"\nRising stars: {result['rising_stars']}")
-    print(f"\nStable critical: {result['stable_critical']}")
+    print(f"\nAdaptive weights: {result['adaptive_weights'].to_dict()}")
+    print(f"\nWeight drift:")
+    for m, d in result['weight_evolution']['drift'].items():
+        if d['significant']:
+            print(f"  ⚠️ {m}: {d['direction']} by {d['absolute_change']:.4f}")

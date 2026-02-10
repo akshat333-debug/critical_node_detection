@@ -27,12 +27,14 @@ from evaluation import (compare_attack_methods, compute_attack_effectiveness,
                         get_ranking_from_centrality, get_ranking_from_topsis)
 from data_loading import (load_karate_club, load_les_miserables, 
                           load_florentine_families, load_dolphins,
+                          load_power_grid, load_usair,
                           create_barabasi_albert, create_erdos_renyi,
                           get_network_info)
 from cascading_failure import simulate_cascading_failure, compare_cascade_methods, cascade_over_fractions
 from sensitivity_analysis import sensitivity_to_normalization, sensitivity_to_centrality_removal, sensitivity_to_top_k
 from real_world_datasets import generate_social_network, generate_infrastructure_network, generate_biological_network, get_network_characteristics
-from temporal_analysis import temporal_prediction_summary, generate_temporal_snapshots, analyze_temporal_rankings
+from temporal_analysis import temporal_prediction_summary, temporal_adaptive_summary, generate_temporal_snapshots, analyze_temporal_rankings
+from scalability import benchmark_scalability, benchmark_single
 from explainable_ai import explain_node, explain_top_k, generate_summary_report
 from uncertainty import full_uncertainty_analysis, bootstrap_rankings
 from domain_weights import domain_aware_analysis, get_available_domains, detect_network_domain
@@ -149,6 +151,7 @@ else:
         "Choose a network:",
         ["Karate Club (34 nodes)", "Les Miserables (77 nodes)", 
          "Florentine Families (15 nodes)", "Dolphins (62 nodes)",
+         "Power Grid (4941 nodes)", "USAir (332 nodes)",
          "Barabási-Albert (custom)", "Erdős-Rényi (custom)"]
     )
     
@@ -163,6 +166,10 @@ else:
             return load_florentine_families()
         elif "Dolphins" in option:
             return load_dolphins()
+        elif "Power Grid" in option:
+            return load_power_grid()
+        elif "USAir" in option:
+            return load_usair()
         elif "Barabási" in option:
             return create_barabasi_albert(ba_n, ba_m)
         else:
@@ -170,11 +177,11 @@ else:
     
     # Additional parameters for synthetic networks
     if "Barabási" in network_option:
-        ba_n = st.sidebar.slider("Number of nodes", 20, 500, 100)
+        ba_n = st.sidebar.slider("Number of nodes", 20, 2000, 100)
         ba_m = st.sidebar.slider("Edges per new node", 1, 10, 3)
         G = load_network(network_option, ba_n=ba_n, ba_m=ba_m)
     elif "Erdős" in network_option:
-        er_n = st.sidebar.slider("Number of nodes", 20, 500, 100)
+        er_n = st.sidebar.slider("Number of nodes", 20, 2000, 100)
         er_p = st.sidebar.slider("Edge probability", 0.01, 0.5, 0.1)
         G = load_network(network_option, er_n=er_n, er_p=er_p)
     else:
@@ -269,11 +276,12 @@ if excluded_metrics:
 # MAIN TABS
 # ============================================================================
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14, tab15 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14, tab15, tab16 = st.tabs([
     "📈 Overview", "📊 Centralities", "⚖️ CRITIC", 
     "🏆 Rankings", "💥 Attack", "🌊 Cascade", 
     "📥 Export", "🔬 Sensitivity", "📊 Compare", "🌐 Real-World",
-    "⏰ Temporal", "💡 Explain", "📊 Uncertainty", "🎯 Domain", "🛡️ Adversarial"
+    "⏰ Temporal", "💡 Explain", "📊 Uncertainty", "🎯 Domain", "🛡️ Adversarial",
+    "📏 Scalability"
 ])
 
 # TAB 1: Overview
@@ -730,20 +738,31 @@ with tab10:
         fig = px.bar(x=weights_rw.values, y=weights_rw.index, orientation='h', color=weights_rw.values)
         st.plotly_chart(fig, use_container_width=True)
 
-# TAB 11: Temporal Analysis (NEW)
+# TAB 11: Temporal Analysis with Adaptive Weights
 with tab11:
     st.subheader("⏰ Temporal Critical Node Prediction")
-    st.markdown("Predict which nodes will become critical in the FUTURE.")
+    st.markdown("Predict future critical nodes **and** track how CRITIC weights adapt over time.")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         n_snapshots = st.slider("Number of time snapshots", 3, 10, 5)
     with col2:
         volatility = st.slider("Network volatility", 0.05, 0.30, 0.10)
+    with col3:
+        use_adaptive_temporal = st.checkbox("🔄 Adaptive weights", value=True,
+                                           help="Recalculate CRITIC weights per snapshot with exponential decay")
+    
+    if use_adaptive_temporal:
+        decay_factor = st.slider("Decay factor (0=equal, 1=latest only)", 0.0, 1.0, 0.3, 0.1,
+                                help="Higher values weight recent snapshots more heavily")
     
     if st.button("⏰ Run Temporal Analysis", type="primary"):
-        with st.spinner("Generating temporal snapshots..."):
-            result = temporal_prediction_summary(G, n_snapshots, volatility)
+        if use_adaptive_temporal:
+            with st.spinner("Running adaptive temporal analysis..."):
+                result = temporal_adaptive_summary(G, n_snapshots, volatility, decay=decay_factor)
+        else:
+            with st.spinner("Generating temporal snapshots..."):
+                result = temporal_prediction_summary(G, n_snapshots, volatility)
         
         st.success(f"Analyzed {n_snapshots} snapshots!")
         
@@ -758,6 +777,54 @@ with tab11:
         if result['stable_critical']:
             for sc in result['stable_critical'][:5]:
                 st.write(f"**Node {sc['node']}**: Stability σ={sc['stability']:.2f}")
+        
+        # Adaptive weight analysis (only when enabled)
+        if use_adaptive_temporal and 'weight_evolution' in result:
+            st.markdown("---")
+            st.markdown("### 📊 CRITIC Weight Evolution Over Time")
+            
+            weight_df = result['weight_evolution']['weight_timeseries']
+            fig = go.Figure()
+            for col in weight_df.columns:
+                fig.add_trace(go.Scatter(
+                    x=list(range(len(weight_df))), y=weight_df[col],
+                    mode='lines+markers', name=col.capitalize(),
+                    line=dict(width=2)
+                ))
+            fig.update_layout(
+                title='How CRITIC Weights Change Across Snapshots',
+                xaxis_title='Snapshot (time)',
+                yaxis_title='CRITIC Weight',
+                hovermode='x unified',
+                height=400
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Weight drift alerts
+            st.markdown("### ⚠️ Weight Drift Detection")
+            drift = result['weight_evolution']['drift']
+            has_drift = False
+            for metric, d in drift.items():
+                if d['significant']:
+                    has_drift = True
+                    icon = "📈" if d['direction'] == 'increased' else "📉"
+                    st.warning(f"{icon} **{metric}**: {d['direction']} by {d['absolute_change']:.4f} "
+                              f"(from {d['initial']:.4f} → {d['final']:.4f})")
+            if not has_drift:
+                st.success("✅ No significant weight drift detected — weights are stable across time.")
+            
+            # Static vs Adaptive comparison
+            st.markdown("### 🔄 Static vs. Adaptive Weights")
+            comp_data = []
+            for m, c in result['weight_comparison'].items():
+                comp_data.append({
+                    'Metric': m.capitalize(),
+                    'Static CRITIC': round(c['static'], 4),
+                    'Adaptive (temporal)': round(c['adaptive'], 4),
+                    'Difference': round(c['diff'], 4)
+                })
+            st.dataframe(pd.DataFrame(comp_data), use_container_width=True, hide_index=True)
+
 
 # TAB 12: Explainable AI (NEW)
 with tab12:
@@ -865,12 +932,102 @@ with tab15:
         for rec in result['recommendations']:
             st.write(f"• {rec}")
 
+# TAB 16: Scalability Benchmark
+with tab16:
+    st.subheader("📏 Scalability Benchmark")
+    st.markdown("Demonstrate CRITIC-TOPSIS performance on **large networks** and measure computation time.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        bench_model = st.selectbox("Network model:", ["Barabási-Albert", "Erdős-Rényi"])
+    with col2:
+        bench_max = st.selectbox("Max network size:", [1000, 2000, 5000], index=1)
+    
+    # Build size list
+    if bench_max == 1000:
+        bench_sizes = [100, 250, 500, 750, 1000]
+    elif bench_max == 2000:
+        bench_sizes = [100, 250, 500, 1000, 1500, 2000]
+    else:
+        bench_sizes = [100, 500, 1000, 2000, 3000, 5000]
+    
+    st.caption(f"Will test sizes: {bench_sizes}")
+    
+    if st.button("📏 Run Scalability Benchmark", type="primary"):
+        progress_bar = st.progress(0, text="Starting benchmark...")
+        
+        def update_progress(i, total):
+            progress_bar.progress((i + 1) / total, text=f"Testing n={bench_sizes[i]}...")
+        
+        with st.spinner("Benchmarking..."):
+            model_key = 'barabasi_albert' if 'Barabási' in bench_model else 'erdos_renyi'
+            bench_df = benchmark_scalability(
+                sizes=bench_sizes, model=model_key, 
+                progress_callback=update_progress
+            )
+        
+        progress_bar.progress(1.0, text="Complete!")
+        st.success(f"Benchmark complete for {len(bench_sizes)} network sizes!")
+        
+        # Scaling factor
+        scale_factor = bench_df.iloc[-1]['total_time'] / max(bench_df.iloc[0]['total_time'], 0.0001)
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Smallest", f"{bench_df.iloc[0]['n_nodes']} nodes",
+                   f"{bench_df.iloc[0]['total_time']:.3f}s")
+        col2.metric("Largest", f"{bench_df.iloc[-1]['n_nodes']} nodes",
+                   f"{bench_df.iloc[-1]['total_time']:.3f}s")
+        col3.metric("Scaling Factor", f"{scale_factor:.1f}x")
+        
+        # Timing chart
+        st.markdown("### ⏱️ Computation Time vs Network Size")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=bench_df['n_nodes'], y=bench_df['centrality_time'],
+            mode='lines+markers', name='Centralities',
+            line=dict(width=2, color='#1f77b4')
+        ))
+        fig.add_trace(go.Scatter(
+            x=bench_df['n_nodes'], y=bench_df['critic_time'],
+            mode='lines+markers', name='CRITIC Weights',
+            line=dict(width=2, color='#ff7f0e')
+        ))
+        fig.add_trace(go.Scatter(
+            x=bench_df['n_nodes'], y=bench_df['topsis_time'],
+            mode='lines+markers', name='TOPSIS Ranking',
+            line=dict(width=2, color='#2ca02c')
+        ))
+        fig.add_trace(go.Scatter(
+            x=bench_df['n_nodes'], y=bench_df['total_time'],
+            mode='lines+markers', name='Total',
+            line=dict(width=3, color='red', dash='dash')
+        ))
+        fig.update_layout(
+            xaxis_title='Number of Nodes',
+            yaxis_title='Time (seconds)',
+            hovermode='x unified',
+            height=450
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Detailed table
+        st.markdown("### 📋 Detailed Timing Results")
+        display_df = bench_df[['n_nodes', 'n_edges', 'centrality_time', 'critic_time', 'topsis_time', 'total_time']].copy()
+        display_df.columns = ['Nodes', 'Edges', 'Centrality (s)', 'CRITIC (s)', 'TOPSIS (s)', 'Total (s)']
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        
+        # Current network benchmark
+        st.markdown("### 🔍 Current Network Performance")
+        current_bench = benchmark_single(G)
+        st.info(f"**{getattr(G, 'name', 'Current')}** ({current_bench['n_nodes']} nodes, "
+               f"{current_bench['n_edges']} edges): **{current_bench['total_time']:.4f}s** total")
+
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #888; font-size: 0.9rem;'>
     <p>Critical Node Detection using CRITIC-TOPSIS Framework</p>
-    <p><em>Advanced: Temporal Prediction | Explainable AI | Uncertainty | Domain Weights | Adversarial Robustness</em></p>
+    <p><em>Advanced: Temporal Prediction | Adaptive Weights | Explainable AI | Uncertainty | Domain Weights | Adversarial Robustness | Scalability</em></p>
 </div>
 """, unsafe_allow_html=True)
 
