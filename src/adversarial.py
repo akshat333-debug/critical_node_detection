@@ -78,11 +78,24 @@ def sybil_attack(G: nx.Graph,
     Sybil attack: Add fake nodes to boost a target's importance.
     """
     H = G.copy()
-    max_node = max(H.nodes()) if H.nodes() else 0
+    # Determine new node strategy
+    existing_nodes = set(H.nodes())
+    is_integer_graph = all(isinstance(n, int) for n in existing_nodes)
     
+    max_node_val = -1
+    if is_integer_graph and existing_nodes:
+        max_node_val = max(existing_nodes)
+
     sybil_nodes = []
     for i in range(n_sybils):
-        sybil = max_node + i + 1
+        if is_integer_graph:
+            sybil = max_node_val + i + 1
+        else:
+            # Generate unique string ID
+            sybil = f"sybil_{i}"
+            while sybil in existing_nodes:
+                sybil = f"sybil_{i}_{np.random.randint(1000)}"
+        
         sybil_nodes.append(sybil)
         H.add_node(sybil)
         
