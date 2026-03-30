@@ -33,7 +33,7 @@ export default function Conclusion({ data, impactData, robustnessData }) {
   return (
     <section className="section animate-in">
       <div className="section-header">
-        <div className="step-badge">Step 5 / 5</div>
+        <div className="step-badge">Step 8 / 8</div>
         <h2>📦 Conclusion & Export</h2>
         <p>
           Summary of key findings from the CRITIC-TOPSIS analysis pipeline.

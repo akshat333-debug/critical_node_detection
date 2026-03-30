@@ -10,18 +10,6 @@ export default function Navbar({ sections, active, onNavigate, completed, networ
           <span>Critical Node Detection</span>
         </div>
 
-        <ul className="nav-links">
-          {sections.map(s => (
-            <li key={s.id}>
-              <button
-                className={`nav-link ${active === s.id ? 'active' : ''}`}
-                onClick={() => onNavigate(s.id)}
-              >
-                {completed.has(s.id) && active !== s.id ? '✓ ' : ''}{s.label.split(' ').slice(1).join(' ')}
-              </button>
-            </li>
-          ))}
-        </ul>
 
         <div className="network-selector">
           <select value={network} onChange={e => onNetworkChange(e.target.value)}>

@@ -7,6 +7,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, ScatterChart, Scatter, CartesianGrid, Legend
 } from 'recharts'
+import NetworkGraph from '../components/NetworkGraph'
 
 const COLORS = ['#6366f1', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#f97316', '#f43f5e']
 
@@ -152,6 +153,8 @@ function ExplanationCards({ explanations }) {
 }
 
 export default function Discovery({ data, loading }) {
+  const [colorMetric, setColorMetric] = useState('topsis_score')
+
   if (loading || !data) {
     return (
       <section className="section">
@@ -163,11 +166,11 @@ export default function Discovery({ data, loading }) {
     )
   }
 
-  const { network_info, weights, rankings, critical_nodes, excluded_metrics, comparison, explanations } = data
+  const { network_info, weights, rankings, critical_nodes, excluded_metrics, comparison, explanations, graph } = data
 
   return (
     <section className="section animate-in">
-      <SectionHeader step="2 / 5" title="🔍 Network Discovery" description="Load the network, compute centrality measures, determine CRITIC weights, and produce TOPSIS rankings." />
+      <SectionHeader step="2 / 8" title="🔍 Network Discovery" description="Load the network, compute centrality measures, determine CRITIC weights, and produce TOPSIS rankings." />
 
       {/* ── Network Stats ───────────────────────────────────── */}
       <div className="grid-4" style={{ marginBottom: 'var(--space-xl)' }}>
@@ -176,6 +179,25 @@ export default function Discovery({ data, loading }) {
         <MetricCard value={network_info.density?.toFixed(3)} label="Density" />
         <MetricCard value={network_info.avg_clustering?.toFixed(3)} label="Avg Clustering" />
       </div>
+
+      {graph && (
+        <div style={{ marginBottom: 'var(--space-xl)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+            <h3>🕸️ Network Structure</h3>
+            <div className="select-wrapper">
+              <select value={colorMetric} onChange={e => setColorMetric(e.target.value)}>
+                <option value="topsis_score">Color by: TOPSIS Score</option>
+                <option value="degree">Color by: Degree Centrality</option>
+                <option value="betweenness">Color by: Betweenness Centrality</option>
+                <option value="closeness">Color by: Closeness Centrality</option>
+                <option value="pagerank">Color by: PageRank</option>
+                <option value="kshell">Color by: K-Shell</option>
+              </select>
+            </div>
+          </div>
+          <NetworkGraph graphData={graph} criticalNodes={critical_nodes} colorMetric={colorMetric} />
+        </div>
+      )}
 
       {excluded_metrics?.length > 0 && (
         <div className="theory-panel" style={{ marginBottom: 'var(--space-lg)' }}>

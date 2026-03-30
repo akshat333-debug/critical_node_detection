@@ -48,6 +48,31 @@ export async function getRobustness(params) {
   });
 }
 
+export async function getTemporal(params) {
+  return request('/temporal', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+export async function getDomain(params) {
+  return request('/domain', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+export async function getDomains() {
+  return request('/domains');
+}
+
+export async function getScale(params) {
+  return request('/scale', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
 export async function getTheory() {
   return request('/theory');
 }

@@ -42,6 +42,9 @@ from sensitivity_analysis import (
 from uncertainty import full_uncertainty_analysis
 from adversarial import full_adversarial_analysis
 from explainable_ai import explain_node, explain_top_k, generate_summary_report
+from temporal_analysis import temporal_adaptive_summary
+from domain_weights import domain_aware_analysis, get_available_domains
+from scalability import benchmark_scalability
 from data_loading import (
     load_karate_club,
     load_les_miserables,
@@ -103,6 +106,25 @@ class RobustnessRequest(BaseModel):
     top_k: int = Field(10, ge=1, le=50)
 
 
+class TemporalRequest(BaseModel):
+    network: str = "karate"
+    edges: Optional[List[List[str]]] = None
+    n_snapshots: int = Field(5, ge=3, le=10)
+    volatility: float = Field(0.1, ge=0.05, le=0.3)
+    decay: float = Field(0.3, ge=0.0, le=1.0)
+
+
+class DomainRequest(BaseModel):
+    network: str = "karate"
+    edges: Optional[List[List[str]]] = None
+    domain: str = Field("social")
+
+
+class ScaleRequest(BaseModel):
+    model: str = Field("erdos_renyi", pattern="^(barabasi_albert|erdos_renyi)$")
+    max_size: int = Field(1000, ge=100, le=5000)
+
+
 # ── Helper: resolve a NetworkX graph from a request ─────────────────────────
 
 NETWORK_LOADERS = {
@@ -161,6 +183,8 @@ def _run_pipeline(G: nx.Graph, normalization: str = "minmax",
 
 def _safe(obj):
     """Recursively convert numpy / pandas objects to plain Python."""
+    if isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
     if isinstance(obj, (np.integer,)):
         return int(obj)
     if isinstance(obj, (np.floating,)):
@@ -225,6 +249,29 @@ def analyze(req: AnalyzeRequest):
         overlap = len(metric_top & topsis_set) / req.top_k * 100
         comparison.append({"metric": col, "overlap": overlap})
 
+    # Graph topology for force-directed visualization
+    critical_set = set(critical)
+    graph_nodes = []
+    for node in G.nodes():
+        node_data = {
+            "id": int(node) if isinstance(node, (int, np.integer)) else str(node),
+            "is_critical": node in critical_set,
+            "degree": int(G.degree(node)),
+        }
+        if node in results.index:
+            node_data["topsis_score"] = float(results.loc[node, "closeness"])
+            node_data["rank"] = int(results.loc[node, "rank"])
+        if node in df.index:
+            for col in df.columns:
+                node_data[col] = float(df.loc[node, col])
+        graph_nodes.append(node_data)
+
+    graph_links = [
+        {"source": int(u) if isinstance(u, (int, np.integer)) else str(u),
+         "target": int(v) if isinstance(v, (int, np.integer)) else str(v)}
+        for u, v in G.edges()
+    ]
+
     return _safe({
         "network_info": info,
         "centralities": df.reset_index().to_dict(orient="records"),
@@ -237,6 +284,7 @@ def analyze(req: AnalyzeRequest):
         "comparison": comparison,
         "explanations": explanations,
         "summary_report": generate_summary_report(df, weights, results),
+        "graph": {"nodes": graph_nodes, "links": graph_links},
     })
 
 
@@ -336,7 +384,91 @@ def robustness(req: RobustnessRequest):
     })
 
 
-# ── 5. Theory content (static) ─────────────────────────────────────────────
+# ── 5. Temporal Analysis ───────────────────────────────────────────────────
+
+@app.post("/api/temporal")
+def temporal(req: TemporalRequest):
+    """Simulate temporal network evolution, compute weight drift, and predict emerging critical nodes."""
+    G = _resolve_graph(req.network, req.edges)
+    res = temporal_adaptive_summary(
+        G,
+        n_snapshots=req.n_snapshots,
+        volatility=req.volatility,
+        decay=req.decay
+    )
+    
+    # Extract needed components safely
+    weight_ts = res["weight_evolution"].get("weight_timeseries", pd.DataFrame())
+    if not weight_ts.empty:
+        weight_ts = weight_ts.reset_index().to_dict(orient="records")
+    else:
+        weight_ts = []
+
+    return _safe({
+        "current_critical": res["current_critical"],
+        "rising_stars": res["rising_stars"],
+        "stable_critical": res["stable_critical"],
+        "declining": res["declining"],
+        "weight_evolution": {
+            "timeseries": weight_ts,
+            "drift": res["weight_evolution"].get("drift", {}),
+            "metrics": res["weight_evolution"].get("metrics", [])
+        },
+        "adaptive_weights": pd.Series(res["adaptive_weights"]).to_dict() if isinstance(res["adaptive_weights"], (dict, pd.Series)) else res["adaptive_weights"],
+        "static_weights": pd.Series(res["static_weights"]).to_dict() if isinstance(res["static_weights"], (dict, pd.Series)) else res["static_weights"],
+        "weight_comparison": res["weight_comparison"]
+    })
+
+
+# ── 6. Domain specific profiles ───────────────────────────────────────────
+
+@app.post("/api/domain")
+def domain(req: DomainRequest):
+    """Apply empirical weights specialized for specific types of networks."""
+    G = _resolve_graph(req.network, req.edges)
+    
+    # Pass domain to the internal routine
+    dom_result = domain_aware_analysis(G, domain=req.domain)
+
+    # Build per-metric comparison that the frontend expects
+    comparison = {}
+    for metric in dom_result['domain_weights']:
+        comparison[metric] = {
+            'domain_weight': dom_result['domain_weights'].get(metric, 0),
+            'critic_weight': dom_result['critic_weights'].get(metric, 0),
+        }
+    comparison['overall_overlap_fraction'] = dom_result['comparison_with_critic']['overlap']
+
+    return _safe({
+        "domain_weights": dom_result['domain_weights'],
+        "comparison": comparison,
+        "results": dom_result['results'].reset_index().rename(columns={"index": "node"}).to_dict(orient="records")
+    })
+
+@app.get("/api/domains")
+def domains():
+    """Get the available predefined domain profiles."""
+    return _safe(get_available_domains())
+
+
+# ── 7. Scalability Benchmarking ──────────────────────────────────────────
+
+@app.post("/api/scale")
+def scale(req: ScaleRequest):
+    """Run execution time benchmarking over increasingly large networks."""
+    
+    if req.max_size <= 1000:
+        sizes = [100, 250, 500, 750, 1000]
+    elif req.max_size <= 2000:
+        sizes = [100, 250, 500, 1000, 1500, 2000]
+    else:
+        sizes = [100, 500, 1000, 2000, 3000, req.max_size]
+        
+    bench_df = benchmark_scalability(sizes=sizes, model=req.model)
+    return _safe(bench_df.to_dict(orient="records"))
+
+
+# ── 8. Theory content (static) ─────────────────────────────────────────────
 
 @app.get("/api/theory")
 def theory():

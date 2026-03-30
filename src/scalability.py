@@ -47,9 +47,9 @@ def benchmark_single(G: nx.Graph) -> Dict:
     total_time = centrality_time + critic_time + topsis_time
     
     return {
-        'n_nodes': n_nodes,
-        'n_edges': n_edges,
-        'centrality_time': round(centrality_time, 4),
+        'nodes': n_nodes,
+        'edges': n_edges,
+        'centralities_time': round(centrality_time, 4),
         'critic_time': round(critic_time, 4),
         'topsis_time': round(topsis_time, 4),
         'total_time': round(total_time, 4),

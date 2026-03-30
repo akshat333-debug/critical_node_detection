@@ -93,13 +93,14 @@ function EffectivenessChart({ effectiveness }) {
   )
 }
 
-export default function Impact({ data, loading, onRun, analysisData }) {
+export default function Impact({ data, cascadeData, loading, onRun, analysisData }) {
   const hasData = !!data
+  const hasCascade = !!cascadeData
 
   return (
     <section className="section animate-in">
       <div className="section-header">
-        <div className="step-badge">Step 3 / 5</div>
+        <div className="step-badge">Step 3 / 8</div>
         <h2>💥 Experimental Evaluation: Impact Analysis</h2>
         <p>
           Simulate targeted node removal attacks to experimentally validate that CRITIC-TOPSIS
@@ -166,6 +167,81 @@ export default function Impact({ data, loading, onRun, analysisData }) {
               criticality better than any single metric. Degree and PageRank perform reasonably but miss
               bridge nodes; closeness alone struggles with community-spanning importance.
             </p>
+          </div>
+        </div>
+      )}
+
+      {hasCascade && (
+        <div className="animate-in" style={{ marginTop: 'var(--space-2xl)' }}>
+          <div className="section-header">
+            <h2>🌊 Cascading Failures</h2>
+            <p>
+              Simulating the redistribution of load. When a node is removed, its load transfers to neighbors. If they exceed their capacity (Capacity = Initial Load × Factor), they fail too.
+            </p>
+          </div>
+
+          <div className="grid-2">
+            <div className="card" style={{ gridColumn: '1 / -1' }}>
+              <h4 style={{ marginBottom: '0.5rem' }}>Network Survival vs Initial Attack Size (alpha=1.2)</h4>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+                Shows the non-linear threshold where small initial attacks trigger catastrophic avalanches.
+              </p>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={cascadeData.fraction_curve}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.1)" />
+                  <XAxis dataKey="initial_fraction" tick={{ fill: '#94a3b8', fontSize: 12 }} label={{ value: 'Initial Fraction Removed', position: 'insideBottom', offset: -5, fill: '#94a3b8' }} />
+                  <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} label={{ value: 'Nodes Survived (%)', angle: -90, position: 'insideLeft', fill: '#94a3b8' }} />
+                  <Tooltip 
+                    contentStyle={{ background: '#1a1f35', border: '1px solid rgba(148,163,184,0.1)', borderRadius: 8, color: '#e8ecf4' }} 
+                    formatter={(v) => (v * 100).toFixed(1) + '%'} 
+                    labelFormatter={(v) => `Initial attack size: ${(v * 100).toFixed(1)}%`}
+                  />
+                  <Line type="monotone" dataKey="survival_rate" stroke="#f43f5e" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="card">
+              <h4 style={{ marginBottom: '1rem', color: 'var(--accent-rose)' }}>Recent Avalanche (5% attack)</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.3rem' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Capacity Factor (α)</span>
+                  <strong>1.2 (120% tolerance)</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.3rem' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Initial Nodes Removed</span>
+                  <strong>{cascadeData.single.initial_failures}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.3rem' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Total Nodes Failed</span>
+                  <strong style={{ color: 'var(--accent-rose)' }}>{cascadeData.single.total_failures}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.3rem' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Cascade Stages</span>
+                  <strong>{cascadeData.single.cascade_iterations} stages</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Network Survived</span>
+                  <strong style={{ color: 'var(--accent-emerald)' }}>{(cascadeData.single.survival_rate * 100).toFixed(1)}%</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <h4 style={{ marginBottom: '1rem' }}>Cascade Timeline</h4>
+              <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                {cascadeData.cascade_history && cascadeData.cascade_history.length > 0 ? (
+                  cascadeData.cascade_history.map((stage, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem', background: i % 2 === 0 ? 'rgba(0,0,0,0.1)' : 'transparent', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Stage {stage.iteration}</span>
+                      <strong style={{ color: 'var(--accent-rose)' }}>+{stage.failed ? stage.failed.length : 0} failed</strong>
+                    </div>
+                  ))
+                ) : (
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No cascading stages extended beyond the initial attack.</p>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

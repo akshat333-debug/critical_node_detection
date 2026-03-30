@@ -73,7 +73,7 @@ function RobustnessCurve({ centralityImpact }) {
           <XAxis dataKey="centrality" tick={{ fill: '#94a3b8', fontSize: 12 }} />
           <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} label={{ value: 'Impact (% ranking change)', angle: -90, position: 'insideLeft', fill: '#94a3b8' }} />
           <Tooltip contentStyle={{ background: '#1a1f35', border: '1px solid rgba(148,163,184,0.1)', borderRadius: 8, color: '#e8ecf4' }} formatter={(v) => [`${v.toFixed(1)}%`]} />
-          <Bar dataKey="impact" radius={[4, 4, 0, 0]}>
+          <Bar dataKey="impact" radius={[4, 4, 0, 0]} minPointSize={4}>
             {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
           </Bar>
         </BarChart>
@@ -156,7 +156,7 @@ export default function Robustness({ data, loading, onRun }) {
   return (
     <section className="section animate-in">
       <div className="section-header">
-        <div className="step-badge">Step 4 / 5</div>
+        <div className="step-badge">Step 7 / 8</div>
         <h2>🛡️ Robustness & Stability Analysis</h2>
         <p>
           Verify that CRITIC-TOPSIS rankings are stable under perturbation, bootstrap resampling,
