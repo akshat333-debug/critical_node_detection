@@ -1,144 +1,98 @@
-# Critical Node Detection using CRITIC-TOPSIS Framework
+# 🌐 Critical Node Detection (CRITIC-TOPSIS Framework)
 
-A Python implementation for detecting critical nodes in complex networks using a multi-attribute decision-making approach that combines multiple centrality measures.
+A **modern, full-stack, AI-powered execution system** for identifying critical nodes in complex networks using a multi-attribute decision-making approach. This project implements a sophisticated hybrid model that fuses **7 centrality measures** via **CRITIC** weighting and **TOPSIS** ranking.
 
-## 🎯 Project Overview
+---
 
-This project implements a framework to identify the most important nodes in a network by:
-1. Computing 7 centrality measures (degree, betweenness, closeness, eigenvector, PageRank, k-shell, H-index)
-2. Using **CRITIC** (CRiteria Importance Through Intercriteria Correlation) for objective weight determination
-3. Using **TOPSIS** (Technique for Order of Preference by Similarity to Ideal Solution) for final ranking
-4. Validating results through targeted attack simulations
+## ⚡ 1-Click Launch (Docker)
+
+The fastest way to run the entire suite (Backend API + Frontend UI) on any machine:
+
+```bash
+docker-compose up --build
+```
+
+- **Frontend UI:** [http://localhost:5173/](http://localhost:5173/)
+- **Backend API:** [http://localhost:8000/docs](http://localhost:8000/docs) (Interactive Swagger UI)
+
+---
+
+## 🎯 Core Methodology
+
+Traditional methods use a **single centrality metric** (e.g. only degree), which ignores crucial network properties. Our framework fuses information from **7 complementary dimensions**:
+
+1.  **Degree Centrality** (Hub Detection)
+2.  **Betweenness** (Bridge Detection)
+3.  **Closeness** (Global Reach)
+4.  **Eigenvector** (Influence Ranking)
+5.  **PageRank** (Stability/Importance)
+6.  **K-Shell Decomposition** (Core-Periphery)
+7.  **H-Index** (Local Spread)
+
+### 🔬 The Algorithm
+1.  **Metric Computation**: Parallelized calculation of all centralities.
+2.  **CRITIC Weighting**: Objectively assigns weights based on **Standard Deviation** (contrast intensity) and **Intercriteria Correlation** (redundancy filtering).
+3.  **TOPSIS Ranking**: Identifies the "ideal" node by minimizing Euclidean distance to the theoretical high-impact best and maximizing distance from the worst.
+
+---
+
+## 🏗️ New Modern Architecture
+
+The project has transitioned from a monolithic prototype to a professional **Decoupled REST Architecture**:
+
+-   **Backend:** FastAPI (Python 3.11) with automated serialization and JSON response schemas.
+-   **Frontend:** React 19 + Vite + Recharts + Force-Graph-2D for interactive visualizations.
+-   **Simulation:** Real-time **Cascading Failure** and **Targeted Attack** engines.
+-   **Feature Support:** **Custom Dataset Upload** (CSV/TXT edge lists), **Temporal Rankings**, and **Domain-Aware Analysis**.
+
+---
 
 ## 📁 Project Structure
 
-```
+```bash
 critical_node_detection/
-├── src/
-│   ├── __init__.py
-│   ├── data_loading.py      # Load benchmark networks
-│   ├── centralities.py      # Compute 7 centrality measures
-│   ├── critic.py            # CRITIC weighting method
-│   ├── topsis.py            # TOPSIS ranking method
-│   ├── evaluation.py        # Attack simulation experiments
-│   ├── visualization.py     # Plotting functions
-│   └── main_pipeline.py     # Complete experiment pipeline
-├── data/
-│   ├── synthetic/           # Generated networks
-│   └── real_networks/       # Downloaded benchmark networks
-├── results/                  # Experiment outputs
-├── docs/
-│   ├── THEORY.md            # Theoretical background
-│   └── REPORT_SKELETON.md   # Academic report outline
-├── test_installation.py     # Verify setup
+├── api/                  # ⚙️ FastAPI REST Endpoints
+├── frontend/             # 🎨 React 19 Frontend Dashboard
+│   ├── src/sections/     # UI Sections (Impact, Discovery, Robustness)
+│   └── Dockerfile        # Frontend Containerization
+├── src/                  # 🧬 Core Algorithmic Logic (Shared)
+│   ├── critic.py         # Advanced Weighting
+│   ├── topsis.py         # Closeness Ranking
+│   └── evaluation.py     # Attack Simulation Engine
+├── legacy/               # 📜 Original Streamlit Prototype (Archived)
+├── tests/                 # 🧪 Pytest Suite (Mathematical Rigor)
+├── docker-compose.yml    # 📦 1-Click Orchestration
+├── Dockerfile.backend    # 🛡️ Backend Containerization
 └── README.md
 ```
 
-## 🚀 Quick Start
+---
 
-### 1. Setup Environment
+## 🧪 Testing & Verification
 
-```bash
-cd critical_node_detection
-python3 -m venv venv
-source venv/bin/activate
-pip install networkx numpy pandas scipy matplotlib seaborn scikit-learn
-```
-
-### 2. Verify Installation
+We use `pytest` to mathematically verify that the CRITIC-TOPSIS logic is robust against extreme network topologies (e.g., zero-variance or disconnected graphs).
 
 ```bash
-python test_installation.py
+# Run the test suite
+pytest tests/
 ```
 
-### 3. Run Experiments
+---
 
-```bash
-cd src
-python main_pipeline.py
-```
+## 📚 Academic References
 
-This runs the complete pipeline on 4 benchmark networks and saves results to `results/`.
+1.  **CRITIC:** Diakoulaki, D. et al. (1995). "Determining objective weights in multiple criteria problems."
+2.  **TOPSIS:** Hwang, C.L. & Yoon, K. (1981). "Multiple Attribute Decision Making."
+3.  **Complex Networks:** Newman, M.E.J. (2010). "Networks: An Introduction."
 
-## 📊 Output Files
+---
 
-For each network, the pipeline generates:
-- `centralities.csv` - Raw centrality values for all nodes
-- `topsis_ranking.csv` - Final CRITIC-TOPSIS rankings
-- `critic_weights.csv` - Computed CRITIC weights
-- `effectiveness.csv` - Attack effectiveness scores
-- `attack_curves.png` - Node removal curves
-- `centrality_heatmap.png` - Centrality visualization
-- `network.png` - Network diagram with critical nodes highlighted
-- `summary.png` - Combined results figure
+## 🛠️ Requirements (Manual Run)
 
-## 🔬 Using Individual Modules
+-   **Python 3.11+**: `pip install -r requirements.txt`
+-   **Node.js 20+**: `cd frontend && npm install`
+-   **Backend**: `uvicorn api.main:app --port 8000`
+-   **Frontend**: `cd frontend && npm run dev`
 
-### Compute Centralities
-```python
-import networkx as nx
-from centralities import compute_all_centralities
-
-G = nx.karate_club_graph()
-df = compute_all_centralities(G)
-print(df.head())
-```
-
-### Compute CRITIC Weights
-```python
-from critic import compute_critic_weights
-
-weights, details = compute_critic_weights(df)
-print(f"Weights: {weights}")
-```
-
-### Perform TOPSIS Ranking
-```python
-from topsis import topsis_rank, get_critical_nodes
-
-results, details = topsis_rank(df, weights)
-top_10 = get_critical_nodes(results, k=10)
-print(f"Top 10 critical nodes: {top_10}")
-```
-
-### Run Attack Simulation
-```python
-from evaluation import compare_attack_methods, get_ranking_from_topsis
-
-rankings = {
-    'CRITIC-TOPSIS': get_ranking_from_topsis(results),
-    'degree': df['degree'].sort_values(ascending=False).index.tolist()
-}
-attack_results = compare_attack_methods(G, rankings)
-```
-
-## 📈 Benchmark Networks
-
-| Network | Nodes | Edges | Type | Description |
-|---------|-------|-------|------|-------------|
-| Karate Club | 34 | 78 | Social | Zachary's karate club friendships |
-| Les Miserables | 77 | 254 | Literature | Character co-appearances |
-| Florentine Families | 15 | 20 | Historical | Renaissance marriage ties |
-| Barabasi-Albert | 100 | 291 | Synthetic | Scale-free model |
-
-## 📚 Documentation
-
-- See `docs/THEORY.md` for detailed explanations of all methods
-- See `docs/REPORT_SKELETON.md` for academic report outline
-
-## 🛠️ Requirements
-
-- Python 3.8+
-- networkx
-- numpy
-- pandas
-- scipy
-- matplotlib
-- seaborn
-- scikit-learn
-
-## 📖 References
-
-1. Diakoulaki, D., et al. (1995). "Determining objective weights in multiple criteria problems: The CRITIC method."
-2. Hwang, C.L., & Yoon, K. (1981). "Multiple Attribute Decision Making: Methods and Applications."
-3. Newman, M.E.J. (2010). "Networks: An Introduction."
+---
+Copyright © 2026 Critical Node Detection Framework.

@@ -34,6 +34,8 @@ const NETWORKS = [
 export default function App() {
   const [activeSection, setActiveSection] = useState('intro')
   const [network, setNetwork] = useState('karate')
+  const [customEdges, setCustomEdges] = useState(null)
+  
   const [analysisData, setAnalysisData] = useState(null)
   const [impactData, setImpactData] = useState(null)
   const [cascadeData, setCascadeData] = useState(null)
@@ -49,15 +51,20 @@ export default function App() {
     setCompletedSections(prev => new Set([...prev, id]))
   }, [])
 
-  // Run initial analysis when network changes
   useEffect(() => {
+    if (network === 'custom' && !customEdges) {
+      // Clear data and wait for upload
+      setAnalysisData(null)
+      return
+    }
+
     setLoading(prev => ({ ...prev, analyze: true }))
     setAnalysisData(null)
     setImpactData(null)
     setRobustnessData(null)
     setCompletedSections(new Set())
 
-    analyze({ network, top_k: 10 })
+    analyze({ network, edges: network === 'custom' ? customEdges : undefined, top_k: 10 })
       .then(data => {
         setAnalysisData(data)
         markCompleted('intro')
@@ -65,15 +72,14 @@ export default function App() {
       })
       .catch(err => console.error('Analysis failed:', err))
       .finally(() => setLoading(prev => ({ ...prev, analyze: false })))
-  }, [network, markCompleted])
+  }, [network, customEdges, markCompleted])
 
   const runImpact = useCallback(() => {
     setLoading(prev => ({ ...prev, impact: true }))
     
-    // Run both impact and cascade in parallel for this section
     Promise.all([
-      getImpact({ network }),
-      getCascade({ network, capacity_factor: 1.2, initial_fraction: 0.05 })
+      getImpact({ network, edges: network === 'custom' ? customEdges : undefined }),
+      getCascade({ network, edges: network === 'custom' ? customEdges : undefined, capacity_factor: 1.2, initial_fraction: 0.05 })
     ])
       .then(([impData, cascData]) => { 
         setImpactData(impData)
@@ -82,23 +88,23 @@ export default function App() {
       })
       .catch(err => console.error('Impact/Cascade failed:', err))
       .finally(() => setLoading(prev => ({ ...prev, impact: false })))
-  }, [network, markCompleted])
+  }, [network, customEdges, markCompleted])
 
   const runTemporal = useCallback(() => {
     setLoading(prev => ({ ...prev, temporal: true }))
-    getTemporal({ network, n_snapshots: 5, volatility: 0.1, decay: 0.3 })
+    getTemporal({ network, edges: network === 'custom' ? customEdges : undefined, n_snapshots: 5, volatility: 0.1, decay: 0.3 })
       .then(data => { setTemporalData(data); markCompleted('temporal') })
       .catch(err => console.error('Temporal failed:', err))
       .finally(() => setLoading(prev => ({ ...prev, temporal: false })))
-  }, [network, markCompleted])
+  }, [network, customEdges, markCompleted])
 
   const runDomain = useCallback((domainStr) => {
     setLoading(prev => ({ ...prev, domain: true }))
-    getDomain({ network, domain: domainStr })
+    getDomain({ network, edges: network === 'custom' ? customEdges : undefined, domain: domainStr })
       .then(data => { setDomainData(data); markCompleted('domain') })
       .catch(err => console.error('Domain failed:', err))
       .finally(() => setLoading(prev => ({ ...prev, domain: false })))
-  }, [network, markCompleted])
+  }, [network, customEdges, markCompleted])
 
   const fetchDomains = useCallback(() => {
     getDomains()
@@ -116,11 +122,11 @@ export default function App() {
 
   const runRobustness = useCallback(() => {
     setLoading(prev => ({ ...prev, robustness: true }))
-    getRobustness({ network, n_bootstrap: 30, top_k: 10 })
+    getRobustness({ network, edges: network === 'custom' ? customEdges : undefined, n_bootstrap: 30, top_k: 10 })
       .then(data => { setRobustnessData(data); markCompleted('robustness') })
       .catch(err => console.error('Robustness failed:', err))
       .finally(() => setLoading(prev => ({ ...prev, robustness: false })))
-  }, [network, markCompleted])
+  }, [network, customEdges, markCompleted])
 
   return (
     <>
@@ -152,7 +158,15 @@ export default function App() {
 
         {/* Section: Introduction */}
         {activeSection === 'intro' && (
-          <Hero onStart={() => setActiveSection('discovery')} loading={loading.analyze} />
+          <Hero 
+            onStart={() => setActiveSection('discovery')} 
+            onCustomUpload={(edges) => {
+              setCustomEdges(edges)
+              setNetwork('custom')
+              setActiveSection('discovery')
+            }}
+            loading={loading.analyze} 
+          />
         )}
 
         {/* Section: Discovery */}

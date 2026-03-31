@@ -1,8 +1,61 @@
+import { useState, useRef } from 'react'
+
 /**
  * Hero / Introduction section.
  * Explains WHY CRITIC-TOPSIS is unique and distinct vs naive single-metric approaches.
  */
-export default function Hero({ onStart, loading }) {
+export default function Hero({ onStart, onCustomUpload, loading }) {
+  const [dragActive, setDragActive] = useState(false)
+  const [uploadError, setUploadError] = useState(null)
+  const fileInputRef = useRef(null)
+
+  const handleFileParse = (text) => {
+    try {
+      const lines = text.trim().split('\n')
+      const parsedEdges = []
+      
+      for (const line of lines) {
+        // Handle space, tab or comma separated edge pairs
+        const parts = line.trim().split(/[, \t]+/)
+        if (parts.length >= 2) {
+          // Convert numeric strings to actual numbers where possible
+          const u = isNaN(parts[0]) ? parts[0] : parseInt(parts[0], 10)
+          const v = isNaN(parts[1]) ? parts[1] : parseInt(parts[1], 10)
+          parsedEdges.push([u, v])
+        }
+      }
+      
+      if (parsedEdges.length < 2) {
+        setUploadError("Invalid network format. Could not extract valid node pairs.")
+        return
+      }
+      
+      setUploadError(null)
+      onCustomUpload(parsedEdges) // Pass exactly this up to App.jsx -> API
+    } catch (err) {
+      setUploadError("Failed to parse file: " + err.message)
+    }
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const reader = new FileReader()
+      reader.onload = (evt) => handleFileParse(evt.target.result)
+      reader.readAsText(e.dataTransfer.files[0])
+    }
+  }
+
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      const reader = new FileReader()
+      reader.onload = (evt) => handleFileParse(evt.target.result)
+      reader.readAsText(e.target.files[0])
+    }
+  }
+
   return (
     <section className="section animate-in">
       <div className="hero">
@@ -12,9 +65,51 @@ export default function Hero({ onStart, loading }) {
           objectively weights them with <strong>CRITIC</strong>, and ranks nodes via <strong>TOPSIS</strong> —
           producing superior results to any single metric alone.
         </p>
-        <button className="btn btn-primary" onClick={onStart} disabled={loading}>
-          {loading ? <><span className="spinner" /> Analyzing network…</> : '🚀 Begin Analysis'}
-        </button>
+        
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '2rem' }}>
+          <button className="btn btn-primary" onClick={onStart} disabled={loading}>
+            {loading ? <><span className="spinner" /> Analyzing Default Network…</> : '🚀 Analyze Default Network'}
+          </button>
+        </div>
+
+        {/* Drag and Drop Custom Upload Zone */}
+        <div 
+          style={{
+            marginTop: '2rem',
+            padding: '2.5rem 1rem',
+            border: `2px dashed ${dragActive ? 'var(--accent-blue)' : 'var(--border-strong)'}`,
+            borderRadius: '16px',
+            background: dragActive ? 'rgba(59, 130, 246, 0.05)' : 'var(--bg-secondary)',
+            transition: 'all 0.2s ease',
+            cursor: 'pointer',
+            maxWidth: '600px',
+            margin: '2rem auto 0 auto'
+          }}
+          onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(true); }}
+          onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(false); }}
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current.click()}
+        >
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            style={{ display: 'none' }} 
+            accept=".csv,.txt,.gml" 
+            onChange={handleFileChange} 
+          />
+          <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>📥</div>
+          <h4 style={{ marginBottom: '0.5rem' }}>Upload Custom Network</h4>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            Drag and drop your own dataset or click to browse. <br/>
+            Accepts <strong>.csv</strong> or <strong>.txt</strong> edge lists (e.g. <code>NodeA, NodeB</code>)
+          </p>
+          {uploadError && (
+            <div style={{ marginTop: '1rem', color: 'var(--accent-rose)', fontSize: '0.85rem', fontWeight: 500 }}>
+              ⚠️ {uploadError}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Uniqueness & Distinctness Callout ────────────────────────────── */}

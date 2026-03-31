@@ -16,6 +16,7 @@ export default function Navbar({ sections, active, onNavigate, completed, networ
             {networks.map(n => (
               <option key={n.key} value={n.key}>{n.label}</option>
             ))}
+            <option value="custom">Custom Network (Uploaded via Intro)</option>
           </select>
         </div>
       </div>
