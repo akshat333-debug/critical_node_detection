@@ -7,17 +7,40 @@ __pycache__/
 venv/
 env/
 .venv/
+env.bak/
+venv.bak/
 
-# IDE
+# IDE / OS files
 .vscode/
 .idea/
-
-# OS files
 .DS_Store
 Thumbs.db
+*.swp
 
-# Results (optional - uncomment if you don't want to track results)
+# Testing and checking
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.tox/
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# Results (uncomment to ignore results folder)
 # results/
 
 # Downloaded network data
 data/real_networks/*.gml
+
+# Logs
+logs/
+*.log
+
+# Frontend (if not caught by frontend/.gitignore)
+node_modules/
+dist/
+build/
+.env.local
+.env.*.local
+~
